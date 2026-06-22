@@ -7,10 +7,15 @@ read -r -n 4 _length
 osascript -e '
 tell application "System Events"
     tell process "Google Chrome"
-        set base to group 1 of group 1 of group 1 of group 1 of window 1
-        set tabEl to UI element 3 of base
-        -- "Collapse Tabs" / "Expand Tabs" button in the tab strip
-        click button 1 of group 1 of tabEl
+        -- Check if window 1 got hijacked by PiP, and fallback to window 2 if it did
+        if name of window 1 is "Picture in Picture" then
+            set targetWindow to window 2
+        else
+            set targetWindow to window 1
+        end if
+        
+        set base to group 1 of group 1 of group 1 of group 1 of targetWindow
+        click button 1 of group 1 of UI element 3 of base
     end tell
 end tell
 ' 2>/dev/null
