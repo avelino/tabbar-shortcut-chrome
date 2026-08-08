@@ -35,15 +35,18 @@ end findBtn
 
 tell application "System Events"
     tell process "Google Chrome"
-        -- Check if window 1 got hijacked by PiP, and fallback to window 2 if it did
-        if name of window 1 is "Picture in Picture" then
-            set targetWindow to window 2
-        else
-            set targetWindow to window 1
-        end if
-        
-        set base to group 1 of group 1 of group 1 of group 1 of targetWindow
-        click button 1 of group 1 of UI element 3 of base
+        repeat with w in (every window)
+            set wName to name of w
+            -- Skip PiP windows
+            if wName is not "Picture in Picture" and wName does not contain "Video playing in picture-in-picture mode" then
+                try
+                    -- Attempt to click the toggle button in the known hierarchy.
+                    -- This will only succeed on windows that actually have the vertical tab bar.
+                    click button 1 of group 1 of UI element 3 of group 1 of group 1 of group 1 of group 1 of w
+                    return -- Success, exit the script
+                end try
+            end if
+        end repeat
     end tell
 end tell
 APPLESCRIPT
