@@ -1,21 +1,23 @@
 # Toggle Vertical Tabs — Chrome Extension
 
-Keyboard shortcut (`Ctrl+S`) to collapse/expand the **native vertical tab bar** of Google Chrome on macOS.
+Keyboard shortcut (`Cmd+S`) to collapse/expand the **native vertical tab bar** of Google Chrome on macOS.
 
-Chrome doesn't expose any extension API or built-in shortcut to toggle the vertical tab strip. This extension works around that limitation by using **Native Messaging** to call an **AppleScript** that clicks the native "Collapse Tabs" / "Expand Tabs" button via macOS Accessibility.
+Chrome doesn't expose any extension API or built-in shortcut to toggle the vertical tab strip. This extension works around that limitation by using **Native Messaging** to run a small native helper that clicks the native "Collapse Tabs" / "Expand Tabs" button via macOS Accessibility.
 
 Inspired by [this tweet from @sawyerhood](https://x.com/sawyerhood/status/2036944017146208402).
 
 ## How it works
 
 ```
-Ctrl+S → Chrome Extension → Native Messaging → shell script → AppleScript → clicks "Collapse Tabs" button
+Cmd+S → Chrome Extension → Native Messaging → ToggleTabbar.app → AXUIElement API → clicks "Collapse Tabs" button
 ```
 
 1. The extension registers a keyboard shortcut via Chrome's `commands` API
 2. On keypress, it sends a message to a local **native messaging host** (`com.tabbar.toggle`)
-3. The host runs an AppleScript that navigates Chrome's accessibility tree and clicks the collapse/expand button
+3. The host walks Chrome's accessibility tree and presses the collapse/expand button
 4. The button toggles between "Collapse Tabs" and "Expand Tabs" automatically
+
+The host talks to the Accessibility API directly rather than going through AppleScript. Starting `osascript` and reaching System Events costs around 130ms before any work happens; the native helper completes a press in under 10ms. It caches the button's child-index path in `~/Library/Caches/com.tabbar.toggle.path`, re-verifying on each press that the path still lands on the toggle button, and falling back to a full tree search if a Chrome update moves it.
 
 ## Permissions
 
@@ -23,24 +25,25 @@ Ctrl+S → Chrome Extension → Native Messaging → shell script → AppleScrip
 
 | Permission | Why | What it does |
 |---|---|---|
-| **`nativeMessaging`** | Required to communicate with the local shell script that performs the toggle | Allows the extension to send a JSON message to a pre-registered local process via stdio. **No network access, no tab data, no browsing history.** |
+| **`nativeMessaging`** | Required to communicate with the local helper that performs the toggle | Allows the extension to send a JSON message to a pre-registered local process via stdio. **No network access, no tab data, no browsing history.** |
 
-The native messaging host is a shell script that lives on your machine — you install it yourself and can read every line of it. It runs `osascript` (AppleScript) to click a button in Chrome's UI via macOS Accessibility.
+The native messaging host is built from source on your machine — you can read every line of `host/native/main.swift`. It reads the tab strip's accessibility tree and presses one button.
 
 ### macOS Accessibility
 
-The AppleScript uses **System Events** to interact with Chrome's UI. macOS requires explicit permission for this:
+Reading another application's accessibility tree requires explicit permission. macOS grants this per code identity, which is why `host/build-native.sh` wraps the binary in an ad-hoc signed app bundle: an unsigned binary is identified by its cdhash, so the grant would silently die on every rebuild while the settings pane still showed it enabled.
 
-**System Settings > Privacy & Security > Accessibility** — add Google Chrome (or your terminal, if testing manually).
+The first keypress triggers the system prompt. To reset the grant later:
 
-Without this permission the toggle silently fails.
+```bash
+tccutil reset Accessibility com.tabbar.toggle
+```
 
 ## Requirements
 
-- macOS (uses AppleScript + System Events)
+- macOS (uses the Accessibility API)
 - Google Chrome with vertical tabs enabled
-- Node.js 18+ (build only)
-- Accessibility permission for Chrome
+- Node.js 18+ and the Xcode command line tools (build only)
 
 ## Enabling vertical tabs in Chrome
 
@@ -55,37 +58,42 @@ After that the vertical tab strip appears on the left side of the window with a 
 
 ## Install
 
-### 1. Build the extension
+### 1. Build
 
 ```bash
 npm install
-npm run build
+npm run build          # extension → dist/
+./host/build-native.sh # native host → host/ToggleTabbar.app
 ```
 
-### 2. Load in Chrome
+### 2. Load the extension in Chrome
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode** (toggle in the top right)
 3. Click **Load unpacked** and select the `dist/` folder
 4. Copy the **extension ID** shown under "Toggle Vertical Tabs"
 
-### 3. Install the native messaging host
+### 3. Register the native messaging host
 
 ```bash
 ./host/install.sh <your-extension-id>
 ```
 
-This creates a manifest at `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.tabbar.toggle.json` pointing to the local `host/toggle-tabbar.sh` script.
+This writes a manifest to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.tabbar.toggle.json` pointing at the app bundle.
 
-### 4. Grant Accessibility permission
+### 4. Bind the shortcut
 
-**System Settings > Privacy & Security > Accessibility** — make sure Google Chrome is listed and enabled.
+Chrome reserves `Cmd+S` for Save Page, so it won't take the suggested binding automatically. Open `chrome://extensions/shortcuts`, find **Toggle Vertical Tabs**, click the field and press `Cmd+S`. A manual binding overrides Save Page.
+
+Note that in Chrome's `commands` API, `"Ctrl"` means Command on macOS — the actual Control key is `"MacCtrl"`.
 
 ### 5. Use it
 
-Press `Ctrl+S` in any Chrome window to collapse or expand the vertical tab bar.
+Press `Cmd+S` in any Chrome window. The first press raises the Accessibility prompt; approve it and press again.
 
-To change the shortcut: `chrome://extensions/shortcuts`.
+### Where to install
+
+The host has to be built and signed on the machine that runs Chrome, since its Accessibility grant is tied to the local code identity and does not travel with a copied binary.
 
 ## Scripts
 
@@ -95,39 +103,36 @@ To change the shortcut: `chrome://extensions/shortcuts`.
 | `npm run watch` | Compile TypeScript in watch mode |
 | `npm run typecheck` | Type-check without emitting |
 | `npm run clean` | Remove `dist/` |
+| `./host/build-native.sh` | Build and sign the native messaging host |
+| `./host/install.sh <extension-id>` | Register the host with Chrome |
 
 ## Troubleshooting
 
-**Nothing happens on Ctrl+S**
-- Check `chrome://extensions/shortcuts` — make sure the shortcut is registered
-- Open the extension's service worker console (click "Inspect views" in `chrome://extensions`) for errors
-- Verify the native host is installed: `cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.tabbar.toggle.json`
+**Nothing happens on the shortcut**
+- Check `chrome://extensions/shortcuts` — if the field is blank, Chrome refused the binding as a conflict. Set it manually.
+- Open the extension's service worker console ("Inspect views" in `chrome://extensions`) for native host errors
 
-**"Access not allowed" or native messaging errors**
-- Re-run `./host/install.sh <extension-id>` with the correct ID
-- Make sure `host/toggle-tabbar.sh` is executable (`chmod +x host/toggle-tabbar.sh`)
+**It keeps asking for Accessibility permission**
+- Remove any stale entries in **System Settings > Privacy & Security > Accessibility**, then `tccutil reset Accessibility com.tabbar.toggle` and press the shortcut again
+- Rebuilding the host changes its signature, so the grant may need re-approving
 
-**AppleScript does nothing**
-- Grant Accessibility permission to Chrome in System Settings
-- Test manually: `osascript host/toggle-tabbar.sh` won't work (it expects stdin), but you can test the AppleScript directly:
-  ```bash
-  osascript -e '
-  tell application "System Events"
-      tell process "Google Chrome"
-          set base to group 1 of group 1 of group 1 of group 1 of window 1
-          click button 1 of group 1 of UI element 3 of base
-      end tell
-  end tell'
-  ```
+**Toggle button not found**
+- The helper searches the accessibility tree by button label, so it survives most Chrome updates. If it still fails, confirm the vertical tab strip is actually visible.
 
-**Shortcut conflicts with "Save Page"**
-- Change the shortcut in `chrome://extensions/shortcuts` to something else (e.g., `Ctrl+Shift+S`)
+## Testing the host directly
+
+Run the binary with no input; without a native message frame it performs one toggle and reports errors on stderr:
+
+```bash
+./host/ToggleTabbar.app/Contents/MacOS/toggle-tabbar
+```
+
+Accessibility is granted per calling process, so a run from your terminal needs your terminal granted too — separate from the grant Chrome's spawned copy uses.
 
 ## Limitations
 
-- **macOS only** — relies on AppleScript and System Events
-- **Chrome only** — the accessibility tree path is specific to Google Chrome
-- The accessibility tree structure may change across Chrome versions — if the toggle breaks after a Chrome update, run `host/discover.sh` to re-map the UI elements
+- **macOS only** — relies on the macOS Accessibility API
+- **Chrome only** — looks for Chrome's specific button labels
 
 ## License
 

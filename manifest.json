@@ -9,8 +9,8 @@
   "commands": {
     "toggle-vertical-tabs": {
       "suggested_key": {
-        "default": "Ctrl+S",
-        "mac": "Ctrl+S"
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+S"
       },
       "description": "Toggle vertical tab bar"
     }

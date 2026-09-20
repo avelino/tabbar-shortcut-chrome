@@ -1,42 +1,33 @@
 #!/bin/bash
-# Installs the native messaging host for Chrome
+# Registers the native messaging host with Chrome.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOST_NAME="com.tabbar.toggle"
-HOST_SCRIPT="$SCRIPT_DIR/toggle-tabbar.sh"
+# Point at the executable inside the bundle so macOS reads its code identity.
+HOST_BIN="$SCRIPT_DIR/ToggleTabbar.app/Contents/MacOS/toggle-tabbar"
 MANIFEST_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
-MANIFEST_PATH="$MANIFEST_DIR/$HOST_NAME.json"
 
-# Get the extension ID from Chrome (user must provide or we use wildcard)
 EXTENSION_ID="${1:-}"
-
 if [ -z "$EXTENSION_ID" ]; then
-  echo "Usage: ./install.sh <extension-id>"
-  echo ""
-  echo "To find your extension ID:"
-  echo "  1. Go to chrome://extensions"
-  echo "  2. Enable Developer mode"
-  echo "  3. Copy the ID of 'Toggle Vertical Tabs'"
+  echo "Usage: ./install.sh <extension-id>   (find it at chrome://extensions)"
+  exit 1
+fi
+if [ ! -x "$HOST_BIN" ]; then
+  echo "Missing $HOST_BIN — run ./host/build-native.sh first."
   exit 1
 fi
 
 mkdir -p "$MANIFEST_DIR"
-
-cat > "$MANIFEST_PATH" <<EOF
+cat > "$MANIFEST_DIR/$HOST_NAME.json" <<EOF
 {
   "name": "$HOST_NAME",
-  "description": "Toggle Chrome vertical tab bar via AppleScript",
-  "path": "$HOST_SCRIPT",
+  "description": "Toggle Chrome vertical tab bar",
+  "path": "$HOST_BIN",
   "type": "stdio",
   "allowed_origins": ["chrome-extension://$EXTENSION_ID/"]
 }
 EOF
 
-echo "Installed native messaging host:"
-echo "  Manifest: $MANIFEST_PATH"
-echo "  Script:   $HOST_SCRIPT"
-echo "  Extension: $EXTENSION_ID"
-echo ""
-echo "Make sure System Settings > Privacy & Security > Accessibility"
-echo "has your terminal (or Chrome) enabled."
+echo "Installed $MANIFEST_DIR/$HOST_NAME.json -> $HOST_BIN"
+echo "Press the shortcut once and approve the Accessibility prompt."
