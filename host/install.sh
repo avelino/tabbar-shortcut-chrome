@@ -21,6 +21,15 @@ if [ -z "$EXTENSION_ID" ]; then
   exit 1
 fi
 
+# Compile the AppleScript into its own app: macOS 27 grants Accessibility to
+# osascript itself, not to Chrome, so the app needs a grant of its own.
+APP="$SCRIPT_DIR/TabbarToggle.app"
+rm -rf "$APP"
+osacompile -o "$APP" "$SCRIPT_DIR/toggle.applescript"
+plutil -insert CFBundleIdentifier -string com.tabbar.toggle.applet "$APP/Contents/Info.plist"
+plutil -insert LSUIElement -bool true "$APP/Contents/Info.plist"
+codesign -f -s - "$APP"
+
 mkdir -p "$MANIFEST_DIR"
 
 cat > "$MANIFEST_PATH" <<EOF
@@ -38,5 +47,7 @@ echo "  Manifest: $MANIFEST_PATH"
 echo "  Script:   $HOST_SCRIPT"
 echo "  Extension: $EXTENSION_ID"
 echo ""
-echo "Make sure System Settings > Privacy & Security > Accessibility"
-echo "has your terminal (or Chrome) enabled."
+echo "Grant Accessibility to TabbarToggle (it prompts on first run):"
+echo "  macOS 27: System Settings > Privacy & Security > Device Control and Data Access"
+echo "  macOS 26 and earlier: System Settings > Privacy & Security > Accessibility"
+open -g "$APP"
